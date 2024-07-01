@@ -1,113 +1,417 @@
-import Image from "next/image";
+"use client";
+import {
+  Field,
+  Fieldset,
+  Input,
+  Label,
+  Tab,
+  TabGroup,
+  TabList,
+} from "@headlessui/react";
+import { useState } from "react";
 
-export default function Home() {
+enum DumpsterType {
+  FLAT_RATE,
+  HAUL_PLUS,
+  INCLUSION,
+}
+
+// Utility function to round up to the nearest multiple
+const roundUp = (num: number | string, multiple: number | string): number => {
+  return Math.ceil(Number(num) / Number(multiple)) * Number(multiple);
+};
+
+// Function to calculate Cost to Us (CTU)
+const calculateCTU = (
+  cost: number | string,
+  fuel: number | string,
+  tax: number | string
+): number => {
+  return Number(cost) * (1 + Number(fuel) / 100) * (1 + Number(tax) / 100);
+};
+
+// Function to calculate Price to Customer (PTC) for Delivery - NON-ASAP
+const calculateDeliveryNonASAP = (
+  dCost: number | string,
+  fuel: number | string,
+  tax: number | string,
+  rca: boolean
+): { ptc: number; ctu: number } => {
+  const ctu = calculateCTU(dCost, fuel, tax);
+  const additionalCost = rca ? 20 : 25;
+  const multiplier = rca ? 1.03 : 1.04;
+  const ptc = (ctu + additionalCost) * multiplier;
+  return { ptc: roundUp(ptc, 5), ctu };
+};
+
+// Function to calculate Price to Customer (PTC) for Delivery - ASAP
+const calculateDeliveryASAP = (
+  dCost: number | string,
+  fuel: number | string,
+  tax: number | string,
+  rca: boolean
+): { ptc: number; ctu: number } => {
+  const ctu = calculateCTU(dCost, fuel, tax);
+  const additionalCost = 75;
+  const multiplier = rca ? 1.03 : 1.04;
+  const ptc = (ctu + additionalCost) * multiplier;
+  return { ptc: roundUp(ptc, 5), ctu };
+};
+
+// Function to calculate Price to Customer (PTC) for Flat Rate
+const calculateHaulFlat = (
+  hCost: number | string,
+  fuel: number | string,
+  tax: number | string,
+  rca: boolean
+): { ptc: number; ctu: number } => {
+  const ctu = calculateCTU(hCost, fuel, tax);
+  const additionalCost = rca ? 85 : 125;
+  const multiplier = rca ? 1.03 : 1.04;
+  const ptc = (ctu + additionalCost) * multiplier;
+  return { ptc: roundUp(ptc, 5), ctu };
+};
+
+// Function to calculate Price to Customer (PTC) for Haul Plus Rate
+const calculateHaulPlus = (
+  hCost: number | string,
+  fuel: number | string,
+  tax: number | string,
+  rca: boolean,
+  expT: number | string,
+  minT: number | string,
+  tonnageCost: number | string
+): { ptc: number; ctu: number } => {
+  const difT = expT > minT ? Number(expT) - Number(minT) : 0;
+  const additionalCost = difT * Number(tonnageCost);
+  const ctu = calculateCTU(Number(hCost) + additionalCost, fuel, tax);
+  const baseCost = rca ? 85 : 125;
+  const multiplier = rca ? 1.03 : 1.04;
+  const ptc = (ctu + baseCost) * multiplier;
+  return { ptc: roundUp(ptc, 5), ctu };
+};
+
+// Function to calculate Price to Customer (PTC) for Haul - Inclusion Rate
+const calculateHaulInclusion = (
+  hCost: number | string,
+  fuel: number | string,
+  tax: number | string,
+  rca: boolean,
+  expT: number | string,
+  incT: number | string,
+  tonnageCost: number | string
+): { ptc: number; ctu: number } => {
+  let ctu;
+  if (expT > incT) {
+    const difT = Number(expT) - Number(incT);
+    const additionalCost = difT * Number(tonnageCost);
+    ctu = calculateCTU(Number(hCost) + Number(additionalCost), fuel, tax);
+  } else {
+    ctu = calculateCTU(hCost, fuel, tax);
+  }
+  const baseCost = rca ? 85 : 125;
+  const multiplier = rca ? 1.03 : 1.04;
+  const ptc = (ctu + baseCost) * multiplier;
+  return { ptc: roundUp(ptc, 5), ctu };
+};
+
+// Function to calculate Price to Customer (PTC) for Rent
+const calculateRent = (
+  rCost: number | string,
+  tax: number | string,
+  rca: boolean
+): { ptc: number; ctu: number } => {
+  const ctu = Number(rCost) * (1 + Number(tax) / 100);
+  const multiplier = rca ? 1.03 : 1.04;
+  const ptc = ctu * multiplier;
+  return { ptc: roundUp(ptc, 1), ctu };
+};
+
+const DumpsterCalculator = () => {
+  const [dumpsterType, setDumpsterType] = useState(DumpsterType.FLAT_RATE);
+
+  const [dCost, setDCost] = useState<number | string>("");
+  const [hCost, setHCost] = useState<number | string>("");
+  const [rCost, setRCost] = useState<number | string>("");
+  const [fuel, setFuel] = useState<number | string>("");
+  const [tax, setTax] = useState<number | string>("");
+  const [rca, setRca] = useState<boolean>(false);
+  const [isASAP, setIsASAP] = useState<boolean>(false);
+  const [expT, setExpT] = useState<number | string>("");
+  const [minT, setMinT] = useState<number | string>("");
+  const [incT, setIncT] = useState<number | string>("");
+  const [tonnageCost, setTonnageCost] = useState<number | string>("");
+
+  const handleInputChange =
+    (setter: React.Dispatch<React.SetStateAction<number | string>>) =>
+    (e: React.ChangeEvent<HTMLInputElement>) => {
+      setter(parseFloat(e.target.value));
+    };
+
+  const handleCheckboxChange =
+    (setter: React.Dispatch<React.SetStateAction<boolean>>) =>
+    (e: React.ChangeEvent<HTMLInputElement>) => {
+      setter(e.target.checked);
+    };
+
+  const delivery = isASAP
+    ? calculateDeliveryASAP(dCost, fuel, tax, rca)
+    : calculateDeliveryNonASAP(dCost, fuel, tax, rca);
+
+  let haul;
+  if (dumpsterType === DumpsterType.FLAT_RATE) {
+    haul = calculateHaulFlat(hCost, fuel, tax, rca);
+  } else if (dumpsterType === DumpsterType.HAUL_PLUS) {
+    haul = calculateHaulPlus(hCost, fuel, tax, rca, expT, minT, tonnageCost);
+  } else if (dumpsterType === DumpsterType.INCLUSION) {
+    haul = calculateHaulInclusion(
+      hCost,
+      fuel,
+      tax,
+      rca,
+      expT,
+      incT,
+      tonnageCost
+    );
+  } else {
+    haul = { ptc: 0, ctu: 0 };
+  }
+
+  const rent = calculateRent(rCost, tax, rca);
+
   return (
-    <main className="flex min-h-screen flex-col items-center justify-between p-24">
-      <div className="z-10 w-full max-w-5xl items-center justify-between font-mono text-sm lg:flex">
-        <p className="fixed left-0 top-0 flex w-full justify-center border-b border-gray-300 bg-gradient-to-b from-zinc-200 pb-6 pt-8 backdrop-blur-2xl dark:border-neutral-800 dark:bg-zinc-800/30 dark:from-inherit lg:static lg:w-auto  lg:rounded-xl lg:border lg:bg-gray-200 lg:p-4 lg:dark:bg-zinc-800/30">
-          Get started by editing&nbsp;
-          <code className="font-mono font-bold">app/page.tsx</code>
-        </p>
-        <div className="fixed bottom-0 left-0 flex h-48 w-full items-end justify-center bg-gradient-to-t from-white via-white dark:from-black dark:via-black lg:static lg:size-auto lg:bg-none">
-          <a
-            className="pointer-events-none flex place-items-center gap-2 p-8 lg:pointer-events-auto lg:p-0"
-            href="https://vercel.com?utm_source=create-next-app&utm_medium=appdir-template&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            By{" "}
-            <Image
-              src="/vercel.svg"
-              alt="Vercel Logo"
-              className="dark:invert"
-              width={100}
-              height={24}
-              priority
-            />
-          </a>
-        </div>
+    <main className="flex flex-col items-start justify-start w-full max-w-[500px] sm:max-w-[600px] md:max-w-[650px] lg:max-w-[800px] md:mx-auto mt-4 md:mt-12">
+      <div className="max-w-full sm:max-w-lg mx-auto">
+        <TabGroup>
+          <TabList className="flex flex-row items-center justify-around gap-2 sm:gap-4">
+            <Tab
+              className="rounded-full py-2 px-4 text-sm text-gray-700 font-semibold focus:outline-none data-[selected]:bg-black/10 data-[hover]:bg-black/5 data-[selected]:data-[hover]:bg-black/10 data-[focus]:outline-1 data-[focus]:outline-black"
+              onClick={() => setDumpsterType(DumpsterType.FLAT_RATE)}
+            >
+              <h2>Flat Rate</h2>
+            </Tab>
+            <Tab
+              className="rounded-full py-2 px-4 text-sm text-gray-700 font-semibold focus:outline-none data-[selected]:bg-black/10 data-[hover]:bg-black/5 data-[selected]:data-[hover]:bg-black/10 data-[focus]:outline-1 data-[focus]:outline-black"
+              onClick={() => setDumpsterType(DumpsterType.HAUL_PLUS)}
+            >
+              <h2>Haul Plus Rate</h2>
+            </Tab>
+            <Tab
+              className="rounded-full py-2 px-4 text-sm text-gray-700 font-semibold focus:outline-none data-[selected]:bg-black/10 data-[hover]:bg-black/5 data-[selected]:data-[hover]:bg-black/10 data-[focus]:outline-1 data-[focus]:outline-black"
+              onClick={() => setDumpsterType(DumpsterType.INCLUSION)}
+            >
+              <h2>Inclusion Rate</h2>
+            </Tab>
+          </TabList>
+          <div className="max-w-full sm:max-w-lg mx-auto mt-3 p-4 bg-white rounded-lg">
+            <Fieldset className="space-y-4">
+              <Field className="flex flex-col">
+                <Label className="text-sm font-semibold text-gray-700">
+                  Delivery Cost
+                </Label>
+                <Input
+                  className="mt-1 p-2 border border-gray-300 rounded-md focus:ring-indigo-500 focus:border-indigo-500"
+                  type="number"
+                  value={dCost}
+                  onChange={handleInputChange(setDCost)}
+                />
+              </Field>
+              <Field className="flex flex-col">
+                <Label className="text-sm font-semibold text-gray-700">
+                  Haul Cost
+                </Label>
+                <Input
+                  className="mt-1 p-2 border border-gray-300 rounded-md focus:ring-indigo-500 focus:border-indigo-500"
+                  type="number"
+                  value={hCost}
+                  onChange={handleInputChange(setHCost)}
+                />
+              </Field>
+              <Field className="flex flex-col">
+                <Label className="text-sm font-semibold text-gray-700">
+                  Rent Cost
+                </Label>
+                <Input
+                  className="mt-1 p-2 border border-gray-300 rounded-md focus:ring-indigo-500 focus:border-indigo-500"
+                  type="number"
+                  value={rCost}
+                  onChange={handleInputChange(setRCost)}
+                />
+              </Field>
+              <Field className="flex flex-col">
+                <Label className="text-sm font-semibold text-gray-700">
+                  Fuel (%)
+                </Label>
+                <Input
+                  className="mt-1 p-2 border border-gray-300 rounded-md focus:ring-indigo-500 focus:border-indigo-500"
+                  type="number"
+                  value={fuel}
+                  onChange={handleInputChange(setFuel)}
+                />
+              </Field>
+              <Field className="flex flex-col">
+                <Label className="text-sm font-semibold text-gray-700">
+                  Tax (%)
+                </Label>
+                <Input
+                  className="mt-1 p-2 border border-gray-300 rounded-md focus:ring-indigo-500 focus:border-indigo-500"
+                  type="number"
+                  value={tax}
+                  onChange={handleInputChange(setTax)}
+                />
+              </Field>
+              {dumpsterType !== DumpsterType.FLAT_RATE && (
+                <>
+                  <Field className="flex flex-col">
+                    <Label className="text-sm font-semibold text-gray-700">
+                      Expected Tonnage
+                    </Label>
+                    <Input
+                      className="mt-1 p-2 border border-gray-300 rounded-md focus:ring-indigo-500 focus:border-indigo-500"
+                      type="number"
+                      value={expT}
+                      onChange={handleInputChange(setExpT)}
+                    />
+                  </Field>
+                  {dumpsterType === DumpsterType.INCLUSION && (
+                    <Field className="flex flex-col">
+                      <Label className="text-sm font-semibold text-gray-700">
+                        Included Tonnage
+                      </Label>
+                      <Input
+                        className="mt-1 p-2 border border-gray-300 rounded-md focus:ring-indigo-500 focus:border-indigo-500"
+                        type="number"
+                        value={incT}
+                        onChange={handleInputChange(setIncT)}
+                      />
+                    </Field>
+                  )}
+                  <Field className="flex flex-col">
+                    <Label className="text-sm font-semibold text-gray-700">
+                      Minimum Tonnage
+                    </Label>
+                    <Input
+                      className="mt-1 p-2 border border-gray-300 rounded-md focus:ring-indigo-500 focus:border-indigo-500"
+                      type="number"
+                      value={minT}
+                      onChange={handleInputChange(setMinT)}
+                    />
+                  </Field>
+                  <Field className="flex flex-col">
+                    <Label className="text-sm font-semibold text-gray-700">
+                      Tonnage Cost
+                    </Label>
+                    <Input
+                      className="mt-1 p-2 border border-gray-300 rounded-md focus:ring-indigo-500 focus:border-indigo-500"
+                      type="number"
+                      value={tonnageCost}
+                      onChange={handleInputChange(setTonnageCost)}
+                    />
+                  </Field>
+                </>
+              )}
+              <Field className="flex items-center">
+                <Label
+                  className="text-sm font-semibold text-gray-700 py-2 pr-4"
+                  htmlFor="rca"
+                >
+                  RCA
+                </Label>
+                <Input
+                  id="rca"
+                  name="rca"
+                  className="ml-3"
+                  type="checkbox"
+                  checked={rca}
+                  onChange={handleCheckboxChange(setRca)}
+                />
+              </Field>
+              <Field className="flex items-center">
+                <Label
+                  className="text-sm font-semibold text-gray-700 py-2 pr-4"
+                  htmlFor="asap"
+                >
+                  ASAP
+                </Label>
+                <Input
+                  id="asap"
+                  name="asap"
+                  className="ml-3"
+                  type="checkbox"
+                  checked={isASAP}
+                  onChange={handleCheckboxChange(setIsASAP)}
+                />
+              </Field>
+            </Fieldset>
+            <div className="mt-6 overflow-x-auto">
+              <table className="min-w-full divide-y divide-gray-200">
+                <thead className="bg-gray-50">
+                  <tr>
+                    <th
+                      scope="col"
+                      className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
+                    >
+                      🚛
+                    </th>
+                    <th
+                      scope="col"
+                      className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
+                    >
+                      Our Cost
+                    </th>
+                    <th
+                      scope="col"
+                      className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
+                    >
+                      Price
+                    </th>
+                  </tr>
+                </thead>
+                <tbody className="bg-white divide-y divide-gray-200">
+                  <tr>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                      Delivery
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
+                      ${delivery.ctu.toFixed(0)}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-800">
+                      ${delivery.ptc.toFixed(0)}
+                    </td>
+                  </tr>
+                  <tr>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                      Haul
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
+                      ${haul.ctu.toFixed(0)}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-800">
+                      ${haul.ptc.toFixed(0)}
+                    </td>
+                  </tr>
+                  <tr>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                      Rent
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
+                      ${rent.ctu.toFixed(0)}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-800">
+                      ${rent.ptc.toFixed(0)}
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </TabGroup>
       </div>
-
-      <div className="relative z-[-1] flex place-items-center before:absolute before:h-[300px] before:w-full before:-translate-x-1/2 before:rounded-full before:bg-gradient-radial before:from-white before:to-transparent before:blur-2xl before:content-[''] after:absolute after:-z-20 after:h-[180px] after:w-full after:translate-x-1/3 after:bg-gradient-conic after:from-sky-200 after:via-blue-200 after:blur-2xl after:content-[''] before:dark:bg-gradient-to-br before:dark:from-transparent before:dark:to-blue-700 before:dark:opacity-10 after:dark:from-sky-900 after:dark:via-[#0141ff] after:dark:opacity-40 sm:before:w-[480px] sm:after:w-[240px] before:lg:h-[360px]">
-        <Image
-          className="relative dark:drop-shadow-[0_0_0.3rem_#ffffff70] dark:invert"
-          src="/next.svg"
-          alt="Next.js Logo"
-          width={180}
-          height={37}
-          priority
-        />
-      </div>
-
-      <div className="mb-32 grid text-center lg:mb-0 lg:w-full lg:max-w-5xl lg:grid-cols-4 lg:text-left">
-        <a
-          href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template&utm_campaign=create-next-app"
-          className="group rounded-lg border border-transparent px-5 py-4 transition-colors hover:border-gray-300 hover:bg-gray-100 hover:dark:border-neutral-700 hover:dark:bg-neutral-800/30"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <h2 className="mb-3 text-2xl font-semibold">
-            Docs{" "}
-            <span className="inline-block transition-transform group-hover:translate-x-1 motion-reduce:transform-none">
-              -&gt;
-            </span>
-          </h2>
-          <p className="m-0 max-w-[30ch] text-sm opacity-50">
-            Find in-depth information about Next.js features and API.
-          </p>
-        </a>
-
-        <a
-          href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          className="group rounded-lg border border-transparent px-5 py-4 transition-colors hover:border-gray-300 hover:bg-gray-100 hover:dark:border-neutral-700 hover:dark:bg-neutral-800/30"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <h2 className="mb-3 text-2xl font-semibold">
-            Learn{" "}
-            <span className="inline-block transition-transform group-hover:translate-x-1 motion-reduce:transform-none">
-              -&gt;
-            </span>
-          </h2>
-          <p className="m-0 max-w-[30ch] text-sm opacity-50">
-            Learn about Next.js in an interactive course with&nbsp;quizzes!
-          </p>
-        </a>
-
-        <a
-          href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template&utm_campaign=create-next-app"
-          className="group rounded-lg border border-transparent px-5 py-4 transition-colors hover:border-gray-300 hover:bg-gray-100 hover:dark:border-neutral-700 hover:dark:bg-neutral-800/30"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <h2 className="mb-3 text-2xl font-semibold">
-            Templates{" "}
-            <span className="inline-block transition-transform group-hover:translate-x-1 motion-reduce:transform-none">
-              -&gt;
-            </span>
-          </h2>
-          <p className="m-0 max-w-[30ch] text-sm opacity-50">
-            Explore starter templates for Next.js.
-          </p>
-        </a>
-
-        <a
-          href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template&utm_campaign=create-next-app"
-          className="group rounded-lg border border-transparent px-5 py-4 transition-colors hover:border-gray-300 hover:bg-gray-100 hover:dark:border-neutral-700 hover:dark:bg-neutral-800/30"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <h2 className="mb-3 text-2xl font-semibold">
-            Deploy{" "}
-            <span className="inline-block transition-transform group-hover:translate-x-1 motion-reduce:transform-none">
-              -&gt;
-            </span>
-          </h2>
-          <p className="m-0 max-w-[30ch] text-balance text-sm opacity-50">
-            Instantly deploy your Next.js site to a shareable URL with Vercel.
-          </p>
-        </a>
-      </div>
+      <footer className="text-xs text-neutral-400 self-end">
+        support: jordanwfrankfurt@gmail.com
+      </footer>
     </main>
   );
-}
+};
+
+export default DumpsterCalculator;
